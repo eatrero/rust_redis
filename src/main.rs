@@ -1,3 +1,5 @@
+mod lib;
+use lib::ThreadPool;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::vec::Vec;
@@ -92,16 +94,17 @@ fn main() {
     println!("Logs from your program will appear here!");
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    let pool = ThreadPool::new(4);
 
     for stream in listener.incoming() {
-        match stream {
+        pool.execute(|| match stream {
             Ok(mut _stream) => loop {
                 parse_stream(&_stream)
             },
             Err(e) => {
                 println!("error: {}", e);
             }
-        }
+        });
     }
 
     println!("ended")
