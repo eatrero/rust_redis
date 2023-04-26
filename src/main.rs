@@ -11,20 +11,6 @@ enum RESPType {
     Error,
 }
 
-fn parse_req(input: String) -> String {
-    let resp_type_char = input.chars().nth(0).unwrap();
-
-    let resp_type = char_to_type(resp_type_char);
-
-    return match resp_type {
-        RESPType::Array => process_array(input),
-        _ => {
-            println!("error in type");
-            return String::from("+Error\r\n");
-        }
-    };
-}
-
 fn char_to_type(c: char) -> RESPType {
     return match c {
         '+' => RESPType::String,
@@ -52,34 +38,53 @@ fn process_array(input: String) -> String {
 
 fn send_resp(mut stream: &TcpStream, output: String) {
     stream.write(String::from(output).as_bytes()).unwrap();
+    stream.flush().unwrap()
 }
 
-const MESSAGE_SIZE: usize = 5;
+fn parse_req(input: String) -> String {
+    let resp_type_char = input.chars().nth(0).unwrap();
 
-fn parse_stream(mut stream: &TcpStream) -> String {
+    let resp_type = char_to_type(resp_type_char);
+
+    return match resp_type {
+        RESPType::Array => process_array(input),
+        _ => {
+            println!("error in type");
+            return String::from("+Error\r\n");
+        }
+    };
+}
+
+const MESSAGE_SIZE: usize = 512;
+
+fn get_request(mut stream: &TcpStream) -> String {
     // Store all the bytes for our received String
     let mut received: Vec<u8> = vec![];
 
     let mut rx_bytes = [0u8; MESSAGE_SIZE];
-    let mut total_bytes = 0;
 
+    // Read from the current data in the TcpStream
+    let bytes_read = match stream.read(&mut rx_bytes) {
+        Ok(bytes_read) => bytes_read,
+        Err(e) => {
+            println!("error reading stream: {}", e);
+            0
+        }
+    };
+
+    received.extend_from_slice(&rx_bytes[..bytes_read]);
+    return String::from_utf8(received).unwrap();
+}
+
+fn parse_stream(stream: &TcpStream) {
     loop {
-        // Read from the current data in the TcpStream
-        let bytes_read = match stream.read(&mut rx_bytes) {
-            Ok(bytes_read) => bytes_read,
-            Err(e) => {
-                println!("error reading stream: {}", e);
-                0
-            }
-        };
-        total_bytes = total_bytes + bytes_read;
-
-        received.extend_from_slice(&rx_bytes[..bytes_read]);
-        if bytes_read < MESSAGE_SIZE {
+        let req_string = get_request(&stream);
+        if req_string == "" || req_string.len() == 0 {
             break;
         }
+        let resp_string = parse_req(req_string);
+        send_resp(&stream, resp_string);
     }
-    return String::from_utf8(received).unwrap();
 }
 
 fn main() {
@@ -91,18 +96,15 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut _stream) => loop {
-                let req_string = parse_stream(&_stream);
-                if req_string.len() == 0 {
-                    break;
-                }
-                let resp_string = parse_req(req_string);
-                send_resp(&_stream, resp_string);
+                parse_stream(&_stream)
             },
             Err(e) => {
                 println!("error: {}", e);
             }
         }
     }
+
+    println!("ended")
 }
 
 #[cfg(test)]
