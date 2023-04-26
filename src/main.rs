@@ -1,5 +1,4 @@
-mod lib;
-use lib::ThreadPool;
+use redis_starter_rust::ThreadPool;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::vec::Vec;
