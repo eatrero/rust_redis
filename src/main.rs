@@ -107,18 +107,15 @@ fn get_cmd(total_str: String) -> String {
 }
 
 fn get_string_after_cmd(total_str: String, cmd: String) -> String {
-    let split_str = total_str.split("\r\n");
-
-    let after_cmd = split_str
+    let after_cmd = total_str
+        .split("\r\n")
         .clone()
         .skip_while(|x| !x.eq_ignore_ascii_case(cmd.as_str()))
-        .skip(1);
+        .skip(2)
+        .next()
+        .unwrap();
 
-    let cnt = after_cmd.clone().fold(0, |acc, x| acc + 1) / 2;
-
-    let remaining = after_cmd.fold(String::from(""), |acc, x| acc + "\r\n" + x);
-    let y = "*".to_owned() + &cnt.to_string();
-    let z = y + &remaining;
+    let z = "$".to_owned() + after_cmd.len().to_string().as_str() + "\r\n" + &after_cmd + "\r\n";
 
     return z;
 }
@@ -190,5 +187,12 @@ mod test {
         assert_eq!(has_cmd(test.clone(), "kjhkh".to_string()), false);
 
         assert_eq!(get_cmd(test.clone()), "echo");
+    }
+
+    #[test]
+    fn test_echo_cmd() {
+        let test: String = String::from("*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n");
+
+        assert_eq!(process_array(test.clone()), "$11\r\nhello world\r\n");
     }
 }
