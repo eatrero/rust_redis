@@ -1,6 +1,6 @@
-use redis_starter_rust::ThreadPool;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::thread;
 use std::vec::Vec;
 
 #[derive(Debug, PartialEq)]
@@ -27,13 +27,10 @@ fn char_to_type(c: char) -> RESPType {
 }
 
 fn process_array(input: String) -> String {
-    let mut split_string = input.split("\r\n");
-
-    let str_cmd = split_string.next().unwrap();
-    match str_cmd {
-        "*2" => return String::from("*0\r\n"),
-        "*1" => return String::from("+PONG\r\n"),
-        _ => return String::from("+PONG\r\n"),
+    match get_cmd(input.clone()).as_str() {
+        "ping" => return String::from("+PONG\r\n"),
+        "echo" => return get_string_after_cmd(input.clone(), String::from("echo")),
+        _ => return String::from("*0\r\n"),
     };
 }
 
@@ -48,7 +45,10 @@ fn parse_req(input: String) -> String {
     let resp_type = char_to_type(resp_type_char);
 
     return match resp_type {
-        RESPType::Array => process_array(input),
+        RESPType::Array => {
+            let parts = process_array(input);
+            return parts;
+        }
         _ => {
             println!("error in type");
             return String::from("+Error\r\n");
@@ -88,15 +88,49 @@ fn parse_stream(stream: &TcpStream) {
     }
 }
 
+fn has_cmd(total_str: String, cmd: String) -> bool {
+    let split_str = total_str.split("\r\n");
+
+    match split_str
+        .clone()
+        .find(|x| x.eq_ignore_ascii_case(cmd.as_str()))
+    {
+        Some(_) => return true,
+        None => return false,
+    };
+}
+
+fn get_cmd(total_str: String) -> String {
+    let split_str = total_str.split("\r\n");
+
+    return split_str.clone().skip(2).next().unwrap().to_string();
+}
+
+fn get_string_after_cmd(total_str: String, cmd: String) -> String {
+    let split_str = total_str.split("\r\n");
+
+    let after_cmd = split_str
+        .clone()
+        .skip_while(|x| !x.eq_ignore_ascii_case(cmd.as_str()))
+        .skip(1);
+
+    let cnt = after_cmd.clone().fold(0, |acc, x| acc + 1) / 2;
+
+    let remaining = after_cmd.fold(String::from(""), |acc, x| acc + "\r\n" + x);
+    let y = "*".to_owned() + &cnt.to_string();
+    let z = y + &remaining;
+
+    return z;
+}
+
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
-    let pool = ThreadPool::new(4);
 
     for stream in listener.incoming() {
-        pool.execute(|| match stream {
+        thread::spawn(move || match stream {
             Ok(mut _stream) => loop {
                 parse_stream(&_stream)
             },
@@ -128,5 +162,33 @@ mod test {
 
         let type_bulk_string = char_to_type('$');
         assert_eq!(type_bulk_string, RESPType::BulkString);
+    }
+
+    #[test]
+    fn test_get_cmd_length() {
+        let test: String = String::from("3");
+
+        assert_eq!(3, test.parse().unwrap());
+
+        let test: String = String::from("*32");
+        assert_eq!(32, test[1..].parse().unwrap());
+    }
+
+    #[test]
+    fn test_get_remaining_string() {
+        let test: String = String::from("*3\r\n$4\r\necho\r\n$3\r\nhey\r\n$2\r\nyo\r\n");
+
+        let test3 = get_string_after_cmd(test, String::from("echo"));
+        assert_eq!(test3, "*2\r\n$3\r\nhey\r\n$2\r\nyo\r\n");
+    }
+
+    #[test]
+    fn test_has_cmd() {
+        let test: String = String::from("*3\r\n$4\r\necho\r\n$3\r\nhey\r\n$2\r\nyo\r\n");
+
+        assert_eq!(has_cmd(test.clone(), "echo".to_string()), true);
+        assert_eq!(has_cmd(test.clone(), "kjhkh".to_string()), false);
+
+        assert_eq!(get_cmd(test.clone()), "echo");
     }
 }
